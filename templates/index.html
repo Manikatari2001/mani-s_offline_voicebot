@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Offline PDF Voice & Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f7fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .chat-container {
+            background: #fff;
+            width: 400px;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-box {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: #f0f0f0;
+            margin-bottom: 10px;
+        }
+        .user, .bot {
+            margin: 5px 0;
+            padding: 8px 12px;
+            border-radius: 10px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .user {
+            background: #d1ffd1;
+            align-self: flex-end;
+            text-align: right;
+        }
+        .bot {
+            background: #e2e2ff;
+            align-self: flex-start;
+        }
+        input[type="file"], input[type="text"] {
+            width: calc(100% - 20px);
+            margin: 5px 0;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 8px 12px;
+            margin: 5px 3px;
+            border: none;
+            border-radius: 5px;
+            background: #007bff;
+            color: #fff;
+            cursor: pointer;
+        }
+        .stop-btn {
+            background: #dc3545;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div id="chatBox" class="chat-box">
+        <div class="bot">Welcome! Upload a PDF to get started.</div>
+    </div>
+
+    <input type="file" id="pdfFile">
+    <button onclick="uploadPDF()">Upload PDF</button>
+
+    <input type="text" id="questionInput" placeholder="Type your question">
+    <button onclick="askQuestion()">Ask</button>
+
+    <button id="recordBtn">🎤 Ask by Voice (10 sec)</button>
+    <button class="stop-btn" onclick="stopSpeaking()">🛑 Stop Voice</button>
+</div>
+
+<script>
+let synth = window.speechSynthesis;
+let recorder, audioChunks = [];
+
+function addMessage(text, sender) {
+    let chat = document.getElementById('chatBox');
+    let msg = document.createElement('div');
+    msg.className = sender;
+    msg.innerText = text;
+    chat.appendChild(msg);
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function uploadPDF() {
+    let file = document.getElementById('pdfFile').files[0];
+    if (!file) return alert("Select a PDF file.");
+
+    addMessage("📂 Uploading PDF... please wait.", 'bot');
+
+    let formData = new FormData();
+    formData.append('pdf', file);
+
+    fetch('/upload', { method: 'POST', body: formData })
+    .then(res => res.json())
+    .then(data => {
+        addMessage(data.status, 'bot');
+    })
+    .catch(err => {
+        addMessage("❌ Failed to upload PDF.", 'bot');
+        console.error(err);
+    });
+}
+
+function askQuestion() {
+    let question = document.getElementById('questionInput').value;
+    if (!question) return alert("Type your question.");
+
+    addMessage(question, 'user');
+    document.getElementById('questionInput').value = '';
+
+    fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+    })
+    .then(res => res.json())
+    .then(data => {
+        addMessage(data.answer, 'bot');
+        speak(data.answer);
+    })
+    .catch(err => {
+        addMessage("❌ Failed to get answer.", 'bot');
+    });
+}
+
+function recordAudio() {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+        recorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        recorder.ondataavailable = e => audioChunks.push(e.data);
+
+        recorder.onstop = () => {
+            let blob = new Blob(audioChunks, { type: 'audio/webm' });
+            let formData = new FormData();
+            formData.append('audio', blob, 'input.webm');
+
+            fetch('/ask_by_voice', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                addMessage(data.answer, 'bot');
+                speak(data.answer);
+            })
+            .catch(err => {
+                addMessage("❌ Failed to process voice input.", 'bot');
+            });
+        };
+
+        recorder.start();
+        setTimeout(() => recorder.stop(), 10000);
+    })
+    .catch(err => {
+        alert("Microphone access denied.");
+    });
+}
+
+document.getElementById('recordBtn').onclick = recordAudio;
+
+function speak(text) {
+    stopSpeaking();
+    let utter = new SpeechSynthesisUtterance(text);
+    synth.speak(utter);
+}
+
+function stopSpeaking() {
+    synth.cancel();
+}
+</script>
+
+</body>
+</html>

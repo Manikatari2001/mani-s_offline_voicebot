@@ -1,0 +1,5 @@
+flask
+gpt4all
+pdfplumber
+werkzeug
+vosk
